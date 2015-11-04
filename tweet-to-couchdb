@@ -1,0 +1,116 @@
+@@ -0,0 +1,115 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+#  collect_tweets.py
+#  
+#  Copyright 2015 Marian Poppe <marianpoppe@googlemail.com>
+#  
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+
+from __future__ import print_function
+import tweepy
+from tweepy import OAuthHandler
+from tweepy import Stream
+from tweepy.streaming import StreamListener
+import json
+import couchdb
+import couchdb.design
+import time
+
+# Hier die Twitter Zugangsdaten für Entwickler eintragen
+consumer_key = ''
+consumer_secret = ''
+access_token = ''
+access_token_secret = ''
+
+
+# Einlesen der Liste mit Suchbegriffen. Hier eine einfache Textdatei mit einem Wort in jeder Zeile verwenden.
+with open('woerterbuch.txt', 'r') as f:
+    list_of_words = f.read().split()
+
+# Einlesen der Liste der Orte. Beliebig viele Ortsbezeichnungen moeglich. 
+list_of_places = [
+	"Ortsbezeichnung 1", 
+	"Ortsbezeichnung 2", 
+	"Ortsbezeichnung 3", 
+	]
+
+# Name der CouchDB Datenbank
+dbname = 'Tweets'
+couch = couchdb.Server()
+db = couch[dbname]
+
+
+class StdOutListener(tweepy.StreamListener):
+	
+	def on_connect(self):
+		"""Statusmeldung, wenn die Verbindung hergestellt wurde"""
+		print("Verbindung mit dem Twitter Stream hergestellt.")
+		
+	def on_error(self, status_code):
+		"""Statusmeldung, wenn ein Fehler auftritt"""
+		print('Error: ' + repr(status_code))
+		print("Lege Pause ein...")
+		time.sleep(3)
+		return False
+	
+	def on_data(self, data):		
+		"""Tweetverwaltung"""
+		tweet = json.loads(data)	
+		if not "text" in tweet:
+			print ("Tweet ignoriert - fehlender Text")
+			return True
+
+		if not "user" in tweet:
+			print ("Tweet ignoriert - fehlende Nutzerinformationen")
+			return True
+		
+		"""Beispiel einer Formatierung der Tweets fuer Datenbank"""
+		inhalt = tweet["text"]
+		antwort_auf = tweet["in_reply_to_screen_name"]
+		Xnutzer = tweet["user"]
+		nutzername = Xnutzer["name"]
+		nutzername2 = Xnutzer["screen_name"]
+		ort = Xnutzer["location"]
+		follower = Xnutzer["followers_count"]
+		friends = Xnutzer["friends_count"]
+		datum = tweet["created_at"]
+		favorite = tweet["favorite_count"]
+		retweeted = tweet ["retweet_count"]
+		
+		tweet_ausgabe = {'Datum':time.strftime("%d.%m.%Y"), 'Uhrzeit':time.strftime("%H:%M"), 'created_at':datum, 'name':nutzername, 'text':inhalt, 'screen_name':nutzername2, 'ort':ort, 'followers_count':follower, 'friends_count':friends}
+		
+		
+		"""Abspeichern, wenn Orts-Bedingung erfüllt"""
+		if ort and ort in list_of_places:
+			print(datum, "Tweet gespeichert")
+			print()
+			db.save(tweet_ausgabe)
+			return True
+			
+def start_stream():
+	while True:
+		try:
+			if __name__ == '__main__':
+				l = StdOutListener()
+				auth = OAuthHandler(consumer_key, consumer_secret)
+				auth.set_access_token(access_token, access_token_secret)
+				stream = Stream(auth, l)
+				stream.filter(track=list_of_words)
+		except: 
+			continue
+start_stream()
